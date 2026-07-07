@@ -127,12 +127,14 @@ const CONN_FIELDS = {
     ["host", "conn.host", "text"], ["port", "conn.port", "number"],
     ["database", "conn.database", "text"], ["user", "conn.user", "text"],
     ["password", "conn.password", "password"], ["secure", "conn.secure", "checkbox"],
+    ["verify", "conn.verify", "checkbox"], ["ca_cert", "conn.ca_cert", "text"],
   ],
 };
 const CONN_DEFAULTS = {
   sqlite: { path: "" },
   postgresql: { host: "localhost", port: 5432, database: "postgres", user: "postgres", password: "" },
-  clickhouse: { host: "localhost", port: 8123, database: "default", user: "default", password: "", secure: false },
+  clickhouse: { host: "localhost", port: 8123, database: "default", user: "default", password: "",
+    secure: false, verify: true, ca_cert: "" },
 };
 
 /* Общий рендер поля формы; чекбоксы и текстовые поля рисуются по-разному. */
