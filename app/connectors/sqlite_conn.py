@@ -20,5 +20,12 @@ class SQLiteConnector(BaseConnector):
         cur = self._conn.execute(sql)
         return cur.fetchall()
 
+    def get_schema(self):
+        tables = [r[0] for r in self.fetch_all(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+        return {t: [c[1] for c in self.fetch_all(f'PRAGMA table_info("{t}")')]
+                for t in tables}
+
     def close(self):
         self._conn.close()

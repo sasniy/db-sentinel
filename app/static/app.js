@@ -77,7 +77,15 @@ function renderAll() {
 /* ------------------------------------------------------------- dashboard */
 
 async function loadDashboard() {
-  const items = await api("GET", "/api/dashboard");
+  const [items, conns] = await Promise.all(
+    [api("GET", "/api/dashboard"), api("GET", "/api/connections")]);
+  CONNECTIONS = conns;
+  renderDashStats(items);
+  const sel = $("#dash-conn");
+  const current = sel.value;
+  sel.innerHTML = `<option value="">${esc(t("dash.all_connections"))}</option>` +
+    conns.map((c) => `<option value="${c.id}">${esc(c.name)} (${c.db_type})</option>`).join("");
+  sel.value = current;
   const box = $("#dashboard-list");
   if (!items.length) {
     box.innerHTML = `<div class="empty">${esc(t("dash.no_rules"))}</div>`;
@@ -106,6 +114,44 @@ async function loadDashboard() {
   }).join("");
 }
 
+function renderDashStats(items) {
+  const counts = { ok: 0, alert: 0, error: 0, never: 0 };
+  items.filter((it) => it.enabled).forEach((it) => { counts[it.status || "never"]++; });
+  const cards = [
+    ["total", items.length, ""],
+    ["ok", counts.ok, "ok"],
+    ["alert", counts.alert, "alert"],
+    ["error", counts.error, "error"],
+    ["never", counts.never, "never"],
+  ];
+  $("#dash-stats").innerHTML = cards.map(([key, num, cls]) => `
+    <div class="stat-card ${cls} ${cls === "alert" && num > 0 ? "nonzero" : ""}">
+      <div class="stat-num">${num}</div>
+      <div class="stat-label">${esc(t("dash." + key + "_count"))}</div>
+    </div>`).join("");
+}
+
+async function runAllChecks() {
+  const btn = $("#dash-run-all");
+  btn.disabled = true;
+  toast(t("dash.running"));
+  try {
+    const connId = $("#dash-conn").value;
+    const q = connId ? `?connection_id=${connId}` : "";
+    const res = await api("POST", `/api/rules/run-all${q}`);
+    const c = { ok: 0, alert: 0, error: 0 };
+    res.forEach((r) => { c[r.status]++; });
+    toast(`${t("dash.run_done")}: ${t("status.ok")} ${c.ok} · ` +
+      `${t("status.alert")} ${c.alert} · ${t("status.error")} ${c.error}`,
+      c.alert + c.error > 0);
+    await loadDashboard();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function runRule(id) {
   try {
     const res = await api("POST", `/api/rules/${id}/run`);
@@ -127,16 +173,24 @@ const CONN_FIELDS = {
     ["host", "conn.host", "text"], ["port", "conn.port", "number"],
     ["database", "conn.database", "text"], ["user", "conn.user", "text"],
     ["password", "conn.password", "password"], ["secure", "conn.secure", "checkbox"],
+    ["verify", "conn.verify", "checkbox"], ["ca_cert", "conn.ca_cert", "text"],
   ],
 };
 const CONN_DEFAULTS = {
   sqlite: { path: "" },
   postgresql: { host: "localhost", port: 5432, database: "postgres", user: "postgres", password: "" },
-  clickhouse: { host: "localhost", port: 8123, database: "default", user: "default", password: "", secure: false },
+  clickhouse: { host: "localhost", port: 8123, database: "default", user: "default", password: "",
+    secure: false, verify: true, ca_cert: "" },
 };
 
 /* Общий рендер поля формы; чекбоксы и текстовые поля рисуются по-разному. */
 function fieldHtml(name, label, widget, val) {
+  if (widget === "table")
+    return `<label>${esc(t(label))}</label>
+      <input data-param="${name}" list="dl-tables" autocomplete="off" value="${esc(val)}">`;
+  if (widget === "column")
+    return `<label>${esc(t(label))}</label>
+      <input data-param="${name}" list="dl-columns" autocomplete="off" value="${esc(val)}">`;
   if (widget.startsWith("select:")) {
     const opts = widget.slice(7).split(",").map(
       (o) => `<option value="${o}" ${o === val ? "selected" : ""}>${esc(t("opt." + o))}</option>`).join("");
@@ -239,26 +293,26 @@ async function deleteConnection(id) {
 /* Поля формы по типу правила: [param, label, widget, default] */
 const RULE_FIELDS = {
   freshness: [
-    ["table", "rule.table", "text", ""],
-    ["time_column", "rule.time_column", "text", ""],
+    ["table", "rule.table", "table", ""],
+    ["time_column", "rule.time_column", "column", ""],
     ["max_age_minutes", "rule.max_age", "number", 120],
     ["use_utc", "rule.use_utc", "checkbox", false],
   ],
   row_count: [
-    ["table", "rule.table", "text", ""],
-    ["time_column", "rule.time_column", "text", ""],
+    ["table", "rule.table", "table", ""],
+    ["time_column", "rule.time_column", "column", ""],
     ["window_minutes", "rule.window", "number", 1440],
     ["min_rows", "rule.min_rows", "number", 1],
     ["use_utc", "rule.use_utc", "checkbox", false],
   ],
   null_check: [
-    ["table", "rule.table", "text", ""],
-    ["column", "rule.column", "text", ""],
+    ["table", "rule.table", "table", ""],
+    ["column", "rule.column", "column", ""],
     ["max_null_percent", "rule.max_null_pct", "number", 5],
   ],
   duplicates: [
-    ["table", "rule.table", "text", ""],
-    ["key_columns", "rule.key_columns", "text", ""],
+    ["table", "rule.table", "table", ""],
+    ["key_columns", "rule.key_columns", "column", ""],
     ["max_duplicates", "rule.max_duplicates", "number", 0],
   ],
   anomaly: [
@@ -267,8 +321,8 @@ const RULE_FIELDS = {
     ["min_samples", "rule.min_samples", "number", 5],
   ],
   anomaly_history: [
-    ["table", "rule.table", "text", ""],
-    ["time_column", "rule.time_column", "text", ""],
+    ["table", "rule.table", "table", ""],
+    ["time_column", "rule.time_column", "column", ""],
     ["metric", "rule.metric_expr", "text", "COUNT(*)"],
     ["granularity", "rule.granularity", "select:day,hour", "day"],
     ["history_days", "rule.history_days", "number", 30],
@@ -310,6 +364,32 @@ async function loadRules() {
       </td></tr>`).join("") + "</table>";
 }
 
+/* Схема выбранного подключения для подсказок: {таблица: [колонки]} */
+let SCHEMA = {};
+
+async function loadSchemaFor(connId) {
+  SCHEMA = {};
+  try {
+    SCHEMA = (await api("GET", `/api/connections/${connId}/schema`)).tables || {};
+  } catch (e) { /* база недоступна — подсказок не будет, поля остаются ручными */ }
+  fillTableList();
+  fillColumnList();
+}
+
+function fillTableList() {
+  const dl = $("#dl-tables");
+  if (dl) dl.innerHTML = Object.keys(SCHEMA).map(
+    (tb) => `<option value="${esc(tb)}">`).join("");
+}
+
+function fillColumnList() {
+  const dl = $("#dl-columns");
+  if (!dl) return;
+  const tableInput = document.querySelector('#f-rule-params [data-param="table"]');
+  const cols = (tableInput && SCHEMA[tableInput.value.trim()]) || [];
+  dl.innerHTML = cols.map((c) => `<option value="${esc(c)}">`).join("");
+}
+
 function ruleForm(rule) {
   const ruleType = rule ? rule.rule_type : "freshness";
   const typeOptions = META.rule_types.map(
@@ -336,7 +416,9 @@ function ruleForm(rule) {
       <label>${esc(t("rule.cooldown"))}</label>
       <input id="f-rule-cooldown" type="number" value="${rule ? rule.cooldown_minutes : 60}" min="0">
       <label class="check"><input type="checkbox" id="f-rule-enabled" ${!rule || rule.enabled ? "checked" : ""}>
-        <span>${esc(t("common.enabled"))}</span></label>`,
+        <span>${esc(t("common.enabled"))}</span></label>
+      <datalist id="dl-tables"></datalist>
+      <datalist id="dl-columns"></datalist>`,
     async () => {
       const params = collectParams("#f-rule-params");
       const body = {
@@ -354,7 +436,13 @@ function ruleForm(rule) {
     });
   $("#f-rule-type").addEventListener("change", (e) => {
     $("#f-rule-params").innerHTML = fields(e.target.value, {});
+    fillColumnList();
   });
+  $("#f-rule-conn").addEventListener("change", (e) => loadSchemaFor(e.target.value));
+  $("#f-rule-params").addEventListener("input", (e) => {
+    if (e.target.dataset.param === "table") fillColumnList();
+  });
+  loadSchemaFor($("#f-rule-conn").value);
 }
 
 function editRule(id) { ruleForm(RULES.find((r) => r.id === id)); }
@@ -472,6 +560,7 @@ async function init() {
     ruleForm(null);
   });
   $("#history-filter").addEventListener("change", loadHistory);
+  $("#dash-run-all").addEventListener("click", runAllChecks);
   $("#settings-save").addEventListener("click", () =>
     saveSettings().catch((e) => toast(e.message, true)));
   $("#modal-save").addEventListener("click", () =>

@@ -28,5 +28,17 @@ class PostgresConnector(BaseConnector):
             cur.execute(sql)
             return cur.fetchall()
 
+    def get_schema(self):
+        rows = self.fetch_all(
+            "SELECT table_schema, table_name, column_name "
+            "FROM information_schema.columns "
+            "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+            "ORDER BY table_schema, table_name, ordinal_position")
+        schema: dict[str, list[str]] = {}
+        for sch, tbl, col in rows:
+            name = tbl if sch == "public" else f"{sch}.{tbl}"
+            schema.setdefault(name, []).append(col)
+        return schema
+
     def close(self):
         self._conn.close()
