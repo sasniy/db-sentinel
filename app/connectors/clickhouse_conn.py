@@ -33,5 +33,14 @@ class ClickHouseConnector(BaseConnector):
     def fetch_all(self, sql: str):
         return self._client.query(sql).result_rows
 
+    def get_schema(self):
+        rows = self.fetch_all(
+            "SELECT table, name FROM system.columns "
+            "WHERE database = currentDatabase() ORDER BY table, position")
+        schema: dict[str, list[str]] = {}
+        for tbl, col in rows:
+            schema.setdefault(tbl, []).append(col)
+        return schema
+
     def close(self):
         self._client.close()

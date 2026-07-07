@@ -76,6 +76,21 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge.never { background: var(--panel2); color: var(--muted); }
 .badge.off { background: var(--panel2); color: var(--muted); }
 
+.stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.stat-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 24px;
+  min-width: 130px; flex: 1; text-align: center;
+}
+.stat-num { font-size: 36px; font-weight: 700; line-height: 1.1; }
+.stat-card.ok .stat-num { color: var(--ok); }
+.stat-card.alert .stat-num { color: var(--alert); }
+.stat-card.error .stat-num { color: var(--error); }
+.stat-card.never .stat-num { color: var(--muted); }
+.stat-label { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.stat-card.alert.nonzero { border-color: var(--alert); box-shadow: 0 0 12px rgba(231,76,60,.25); }
+.btn:disabled { opacity: .5; cursor: wait; }
+
 .dash-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px 18px; margin: 10px 0; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;

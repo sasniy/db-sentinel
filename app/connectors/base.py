@@ -14,6 +14,10 @@ class BaseConnector(ABC):
     def fetch_all(self, sql: str) -> list[tuple]:
         """Выполнить запрос и вернуть все строки результата."""
 
+    def get_schema(self) -> dict[str, list[str]]:
+        """Схема базы {таблица: [колонки]} — для подсказок в формах правил."""
+        raise NotImplementedError
+
     def fetch_value(self, sql: str):
         """Первое значение первой строки результата."""
         row = self.fetch_one(sql)

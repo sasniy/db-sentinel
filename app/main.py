@@ -26,6 +26,16 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="DB Sentinel", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def no_cache_static(request, call_next):
+    """Статика без агрессивного кеша: после обновления кода браузер сразу
+    видит новые JS/CSS (с ETag ревалидация дешёвая — 304)."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ------------------------------------------------------------------ models
 
 class ConnectionIn(BaseModel):
@@ -152,6 +162,18 @@ def connections_test(body: ConnectionIn):
     return {"ok": True}
 
 
+@app.get("/api/connections/{conn_id}/schema")
+def connection_schema(conn_id: int):
+    conn = storage.get_connection(conn_id)
+    if conn is None:
+        raise HTTPException(404, "Connection not found")
+    try:
+        with get_connector(conn["db_type"], conn["params"]) as db:
+            return {"tables": db.get_schema()}
+    except Exception as e:
+        raise HTTPException(400, f"{type(e).__name__}: {e}")
+
+
 def _validate_connection(body: ConnectionIn):
     if body.db_type not in DB_TYPES:
         raise HTTPException(400, f"Unknown db_type: {body.db_type}")
@@ -193,6 +215,21 @@ def rules_delete(rule_id: int):
     storage.delete_rule(rule_id)
     scheduler.reload_jobs()
     return {"ok": True}
+
+
+@app.post("/api/rules/run-all")
+def rules_run_all(connection_id: int | None = None):
+    """Запустить все включённые правила (опционально — одного подключения)."""
+    results = []
+    for rule in storage.list_rules():
+        if not rule["enabled"]:
+            continue
+        if connection_id is not None and rule["connection_id"] != connection_id:
+            continue
+        result = scheduler.execute_rule(rule["id"])
+        if result is not None:
+            results.append({"rule_id": rule["id"], "rule_name": rule["name"], **result})
+    return results
 
 
 @app.post("/api/rules/{rule_id}/run")
