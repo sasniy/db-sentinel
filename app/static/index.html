@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DB Sentinel</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">🛡️ DB Sentinel</div>
+  <nav id="tabs">
+    <button data-tab="dashboard" class="active" data-i18n="nav.dashboard">Дашборд</button>
+    <button data-tab="connections" data-i18n="nav.connections">Подключения</button>
+    <button data-tab="rules" data-i18n="nav.rules">Правила</button>
+    <button data-tab="history" data-i18n="nav.history">История</button>
+    <button data-tab="settings" data-i18n="nav.settings">Настройки</button>
+  </nav>
+  <div class="lang-switch">
+    <button id="lang-ru">RU</button>
+    <button id="lang-en">EN</button>
+  </div>
+</header>
+
+<main>
+  <section id="tab-dashboard" class="tab active">
+    <p class="hint" data-i18n="dash.next_hint"></p>
+    <div id="dashboard-list"></div>
+  </section>
+
+  <section id="tab-connections" class="tab">
+    <button class="btn primary" id="conn-add" data-i18n="common.add">Добавить</button>
+    <div id="connections-list"></div>
+  </section>
+
+  <section id="tab-rules" class="tab">
+    <button class="btn primary" id="rule-add" data-i18n="common.add">Добавить</button>
+    <div id="rules-list"></div>
+  </section>
+
+  <section id="tab-history" class="tab">
+    <div class="row">
+      <label data-i18n="hist.filter_rule"></label>
+      <select id="history-filter"></select>
+    </div>
+    <div id="history-list"></div>
+  </section>
+
+  <section id="tab-settings" class="tab">
+    <div class="card">
+      <h3 data-i18n="set.language"></h3>
+      <select id="setting-language">
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+      </select>
+      <label class="check"><input type="checkbox" id="setting-recovery">
+        <span data-i18n="set.recovery"></span></label>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="set.telegram"></h3>
+      <label class="check"><input type="checkbox" id="tg-enabled"><span data-i18n="set.channel_enabled"></span></label>
+      <label data-i18n="set.tg_token"></label><input id="tg-token" type="password" autocomplete="off">
+      <label data-i18n="set.tg_chat"></label><input id="tg-chat">
+      <button class="btn" data-test-channel="telegram" data-i18n="set.send_test"></button>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="set.email"></h3>
+      <label class="check"><input type="checkbox" id="em-enabled"><span data-i18n="set.channel_enabled"></span></label>
+      <label data-i18n="set.smtp_host"></label><input id="em-host">
+      <label data-i18n="set.smtp_port"></label><input id="em-port" type="number" value="587">
+      <label class="check"><input type="checkbox" id="em-tls" checked><span data-i18n="set.smtp_tls"></span></label>
+      <label data-i18n="set.smtp_user"></label><input id="em-user">
+      <label data-i18n="set.smtp_pass"></label><input id="em-pass" type="password" autocomplete="off">
+      <label data-i18n="set.mail_from"></label><input id="em-from">
+      <label data-i18n="set.mail_to"></label><input id="em-to">
+      <button class="btn" data-test-channel="email" data-i18n="set.send_test"></button>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="set.mattermost"></h3>
+      <label class="check"><input type="checkbox" id="mm-enabled"><span data-i18n="set.channel_enabled"></span></label>
+      <label data-i18n="set.mm_url"></label><input id="mm-url">
+      <label data-i18n="set.mm_token"></label><input id="mm-token" type="password" autocomplete="off">
+      <label data-i18n="set.mm_user"></label><input id="mm-user">
+      <button class="btn" data-test-channel="mattermost" data-i18n="set.send_test"></button>
+    </div>
+
+    <button class="btn primary" id="settings-save" data-i18n="common.save"></button>
+  </section>
+</main>
+
+<div id="modal-backdrop" class="hidden">
+  <div id="modal">
+    <h3 id="modal-title"></h3>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn primary" id="modal-save" data-i18n="common.save"></button>
+      <button class="btn" id="modal-cancel" data-i18n="common.cancel"></button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
