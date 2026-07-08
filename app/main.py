@@ -257,8 +257,13 @@ def dashboard():
     items = []
     for rule in storage.list_rules():
         last = storage.last_result(rule["id"])
+        last_manual = storage.last_result_by_type(rule["id"], "manual")
+        last_auto = storage.last_result_by_type(rule["id"], "auto")
         conn = connections.get(rule["connection_id"])
         items.append({
+            "last_manual_at": last_manual["checked_at"] if last_manual else None,
+            "last_auto_at": last_auto["checked_at"] if last_auto else None,
+            "next_run_at": scheduler.get_next_run(rule["id"]),
             "rule_id": rule["id"],
             "rule_name": rule["name"],
             "rule_type": rule["rule_type"],

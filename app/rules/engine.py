@@ -31,6 +31,25 @@ def _ident(name: str) -> str:
     return name
 
 
+_SQL_SOURCE_RE = re.compile(r"(?is)^\s*(select|with)\b")
+
+
+def _source(p: dict) -> str:
+    """Источник данных правила: имя таблицы или свой SELECT-подзапрос
+    (поле source_sql) — удобно для больших таблиц с фильтрами WHERE/PREWHERE."""
+    sql = str(p.get("source_sql") or "").strip().rstrip(";").strip()
+    if sql:
+        if not _SQL_SOURCE_RE.match(sql):
+            raise ValueError("source_sql must start with SELECT or WITH")
+        return f"({sql}) AS src"
+    return _ident(p["table"])
+
+
+def _source_label(p: dict) -> str:
+    """Имя источника для сообщений."""
+    return (p.get("table") or "").strip() or "SQL"
+
+
 def _now(p: dict) -> datetime:
     """Текущее время в той зоне, в которой хранятся таймстемпы таблицы."""
     return datetime.utcnow() if p.get("use_utc") else datetime.now()
@@ -90,13 +109,14 @@ def _dispatch(rule: dict, db, db_type: str, lang: str) -> dict:
 
 
 def _check_freshness(p: dict, db, lang: str) -> dict:
-    table, col = _ident(p["table"]), _ident(p["time_column"])
+    src, col = _source(p), _ident(p["time_column"])
     max_age = float(p.get("max_age_minutes", 60))
-    raw = db.fetch_value(f"SELECT MAX({col}) FROM {table}")
+    raw = db.fetch_value(f"SELECT MAX({col}) FROM {src}")
     ts = _parse_ts(raw)
     if ts is None:
         return {"status": "alert", "value": None,
-                "message": t("msg.freshness_empty", lang, table=table, column=col)}
+                "message": t("msg.freshness_empty", lang,
+                             table=_source_label(p), column=col)}
     age_min = (_now(p) - ts).total_seconds() / 60
     ok = age_min <= max_age
     key = "msg.freshness_ok" if ok else "msg.freshness_alert"
@@ -105,10 +125,9 @@ def _check_freshness(p: dict, db, lang: str) -> dict:
 
 
 def _check_row_count(p: dict, db, lang: str) -> dict:
-    table = _ident(p["table"])
     min_rows = float(p.get("min_rows", 1))
     window = int(p.get("window_minutes") or 0)
-    sql = f"SELECT COUNT(*) FROM {table}"
+    sql = f"SELECT COUNT(*) FROM {_source(p)}"
     if window > 0:
         col = _ident(p["time_column"])
         sql += f" WHERE {col} >= '{_time_literal(window, p)}'"
@@ -120,7 +139,7 @@ def _check_row_count(p: dict, db, lang: str) -> dict:
 
 
 def _check_nulls(p: dict, db, lang: str) -> dict:
-    table, col = _ident(p["table"]), _ident(p["column"])
+    src, col = _source(p), _ident(p["column"])
     max_pct = float(p.get("max_null_percent", 0))
     window = int(p.get("window_minutes") or 0)
     where = ""
@@ -128,12 +147,12 @@ def _check_nulls(p: dict, db, lang: str) -> dict:
         tcol = _ident(p["time_column"])
         where = f" WHERE {tcol} >= '{_time_literal(window, p)}'"
     row = db.fetch_one(
-        f"SELECT COUNT(*), SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) FROM {table}{where}"
+        f"SELECT COUNT(*), SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) FROM {src}{where}"
     )
     total = float(row[0] or 0) if row else 0
     if total == 0:
         return {"status": "alert", "value": None,
-                "message": t("msg.null_empty", lang, table=table)}
+                "message": t("msg.null_empty", lang, table=_source_label(p))}
     nulls = float(row[1] or 0)
     pct = nulls / total * 100
     ok = pct <= max_pct
@@ -143,14 +162,13 @@ def _check_nulls(p: dict, db, lang: str) -> dict:
 
 
 def _check_duplicates(p: dict, db, lang: str) -> dict:
-    table = _ident(p["table"])
     keys = [_ident(k) for k in str(p["key_columns"]).split(",") if k.strip()]
     if not keys:
         raise ValueError("key_columns is empty")
     max_dup = float(p.get("max_duplicates", 0))
     key_list = ", ".join(keys)
     dup = float(db.fetch_value(
-        f"SELECT COUNT(*) FROM (SELECT {key_list} FROM {table} "
+        f"SELECT COUNT(*) FROM (SELECT {key_list} FROM {_source(p)} "
         f"GROUP BY {key_list} HAVING COUNT(*) > 1) AS dup_t"
     ) or 0)
     ok = dup <= max_dup
@@ -205,7 +223,7 @@ def _check_anomaly_history(p: dict, db, db_type: str, lang: str) -> dict:
     с историей по z-score. Пропущенные периоды считаются нулём — так ловится
     и «данные вообще не приехали».
     """
-    table, col = _ident(p["table"]), _ident(p["time_column"])
+    src, col = _source(p), _ident(p["time_column"])
     granularity = p.get("granularity", "day")
     if granularity not in _BUCKET_FMT:
         raise ValueError(f"Unknown granularity: {granularity}")
@@ -219,7 +237,7 @@ def _check_anomaly_history(p: dict, db, db_type: str, lang: str) -> dict:
     expr = _bucket_expr(db_type, col, granularity)
     since = _time_literal(days * 1440, p)
     rows = db.fetch_all(
-        f"SELECT {expr} AS bucket, {metric} FROM {table} "
+        f"SELECT {expr} AS bucket, {metric} FROM {src} "
         f"WHERE {col} >= '{since}' GROUP BY {expr} ORDER BY {expr}"
     )
     data = {str(r[0]): float(r[1] or 0) for r in rows}

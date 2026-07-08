@@ -103,6 +103,9 @@ async function loadDashboard() {
             <span class="dash-sub">· ${esc(t("ruletype." + it.rule_type))}</span></div>
           <div class="dash-sub">${esc(it.connection_name)} (${esc(it.db_type)}) ·
             ${esc(t("rule.interval"))}: ${it.interval_minutes}</div>
+          <div class="dash-sub">⏱ ${esc(t("dash.auto_run"))}: ${esc(it.last_auto_at || "—")}
+            · 🖐 ${esc(t("dash.manual_run"))}: ${esc(it.last_manual_at || "—")}
+            · ▶ ${esc(t("dash.next_run"))}: ${esc(fmtNextRun(it.next_run_at))}</div>
           <div class="dash-msg">${esc(it.message || "")}</div>
         </div>
         <div>
@@ -112,6 +115,13 @@ async function loadDashboard() {
         <button class="btn small" onclick="runRule(${it.rule_id})">${esc(t("common.run_now"))}</button>
       </div>`;
   }).join("");
+}
+
+function fmtNextRun(ts) {
+  if (!ts) return "—";
+  const mins = Math.round((new Date(ts.replace(" ", "T")) - Date.now()) / 60000);
+  if (mins <= 0) return t("dash.now");
+  return `${ts.slice(11, 16)} (${t("dash.in_about")} ${mins} ${t("dash.min")})`;
 }
 
 function renderDashStats(items) {
@@ -294,12 +304,14 @@ async function deleteConnection(id) {
 const RULE_FIELDS = {
   freshness: [
     ["table", "rule.table", "table", ""],
+    ["source_sql", "rule.source_sql", "textarea", ""],
     ["time_column", "rule.time_column", "column", ""],
     ["max_age_minutes", "rule.max_age", "number", 120],
     ["use_utc", "rule.use_utc", "checkbox", false],
   ],
   row_count: [
     ["table", "rule.table", "table", ""],
+    ["source_sql", "rule.source_sql", "textarea", ""],
     ["time_column", "rule.time_column", "column", ""],
     ["window_minutes", "rule.window", "number", 1440],
     ["min_rows", "rule.min_rows", "number", 1],
@@ -307,11 +319,13 @@ const RULE_FIELDS = {
   ],
   null_check: [
     ["table", "rule.table", "table", ""],
+    ["source_sql", "rule.source_sql", "textarea", ""],
     ["column", "rule.column", "column", ""],
     ["max_null_percent", "rule.max_null_pct", "number", 5],
   ],
   duplicates: [
     ["table", "rule.table", "table", ""],
+    ["source_sql", "rule.source_sql", "textarea", ""],
     ["key_columns", "rule.key_columns", "column", ""],
     ["max_duplicates", "rule.max_duplicates", "number", 0],
   ],
@@ -322,6 +336,7 @@ const RULE_FIELDS = {
   ],
   anomaly_history: [
     ["table", "rule.table", "table", ""],
+    ["source_sql", "rule.source_sql", "textarea", ""],
     ["time_column", "rule.time_column", "column", ""],
     ["metric", "rule.metric_expr", "text", "COUNT(*)"],
     ["granularity", "rule.granularity", "select:day,hour", "day"],
@@ -470,10 +485,12 @@ async function loadHistory() {
   }
   box.innerHTML = `<table><tr>
       <th>${esc(t("dash.checked_at"))}</th><th>${esc(t("dash.rule"))}</th>
+      <th>${esc(t("hist.run_type"))}</th>
       <th>${esc(t("dash.status"))}</th><th>${esc(t("dash.value"))}</th>
       <th>${esc(t("dash.message"))}</th></tr>` +
     rows.map((r) => `<tr>
       <td>${esc(r.checked_at)}</td><td>${esc(r.rule_name)}</td>
+      <td>${esc(t("trigger." + (r.run_type || "auto")))}</td>
       <td><span class="badge ${r.status}">${esc(t("status." + r.status))}</span></td>
       <td>${r.value ?? ""}</td><td>${esc(r.message)}</td></tr>`).join("") + "</table>";
 }

@@ -12,7 +12,7 @@ log = logging.getLogger("db-sentinel.scheduler")
 scheduler = BackgroundScheduler(job_defaults={"coalesce": True, "max_instances": 1})
 
 
-def execute_rule(rule_id: int) -> dict | None:
+def execute_rule(rule_id: int, run_type: str = "manual") -> dict | None:
     """Выполнить правило, сохранить результат, при необходимости отправить уведомление."""
     rule = storage.get_rule(rule_id)
     if rule is None:
@@ -23,7 +23,7 @@ def execute_rule(rule_id: int) -> dict | None:
 
     previous = storage.last_result(rule_id)
     result = run_rule(rule, connection)
-    storage.add_result(rule_id, result["status"], result["value"], result["message"])
+    storage.add_result(rule_id, result["status"], result["value"], result["message"], run_type)
     log.info("Rule %s [%s]: %s — %s", rule_id, rule["name"], result["status"], result["message"])
 
     _handle_notifications(rule, connection, result, previous)
@@ -71,11 +71,19 @@ def reload_jobs() -> None:
             execute_rule,
             trigger="interval",
             minutes=max(1, int(rule["interval_minutes"])),
-            args=[rule["id"]],
+            args=[rule["id"], "auto"],
             id=f"rule-{rule['id']}",
             replace_existing=True,
         )
     log.info("Scheduler reloaded: %d job(s)", len(scheduler.get_jobs()))
+
+
+def get_next_run(rule_id: int) -> str | None:
+    """Время следующего автозапуска правила (локальное), если оно запланировано."""
+    job = scheduler.get_job(f"rule-{rule_id}")
+    if job is not None and job.next_run_time is not None:
+        return job.next_run_time.strftime("%Y-%m-%d %H:%M:%S")
+    return None
 
 
 def start() -> None:

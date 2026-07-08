@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from .base import BaseConnector
 
 
@@ -18,11 +20,18 @@ class ClickHouseConnector(BaseConnector):
             secure=bool(params.get("secure")),
             connect_timeout=10,
         )
+        # 8443 — стандартный HTTPS-порт ClickHouse: драйвер всё равно пойдёт по
+        # TLS, поэтому включаем secure явно, даже если галочку забыли
+        if kwargs["port"] == 8443:
+            kwargs["secure"] = True
         if kwargs["secure"]:
             # Корпоративный CA (перехват TLS на VPN/прокси) или self-signed сервер
             kwargs["verify"] = params.get("verify", True) is not False
-            ca_cert = (params.get("ca_cert") or "").strip()
+            # Проводник Windows копирует пути в кавычках — убираем их
+            ca_cert = (params.get("ca_cert") or "").strip().strip('"').strip("'")
             if ca_cert:
+                if not Path(ca_cert).is_file():
+                    raise FileNotFoundError(f"CA certificate file not found: {ca_cert}")
                 kwargs["ca_cert"] = ca_cert
         self._client = clickhouse_connect.get_client(**kwargs)
 

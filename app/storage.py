@@ -55,6 +55,10 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_results_rule ON results(rule_id, id);
             """
         )
+        # Миграция: тип запуска (auto — планировщик, manual — кнопка в UI)
+        cols = [r[1] for r in c.execute("PRAGMA table_info(results)").fetchall()]
+        if "run_type" not in cols:
+            c.execute("ALTER TABLE results ADD COLUMN run_type TEXT NOT NULL DEFAULT 'auto'")
     if get_setting("language") is None:
         set_setting("language", DEFAULT_LANGUAGE)
 
@@ -184,11 +188,12 @@ def set_rule_notified(rule_id: int, when: str | None) -> None:
 
 # ---------------------------------------------------------------- results
 
-def add_result(rule_id: int, status: str, value, message: str) -> None:
+def add_result(rule_id: int, status: str, value, message: str, run_type: str = "auto") -> None:
     with _conn() as c:
         c.execute(
-            "INSERT INTO results (rule_id, status, value, message, checked_at) VALUES (?, ?, ?, ?, ?)",
-            (rule_id, status, value, message, now_str()),
+            "INSERT INTO results (rule_id, status, value, message, checked_at, run_type)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (rule_id, status, value, message, now_str(), run_type),
         )
 
 
@@ -209,6 +214,15 @@ def last_result(rule_id: int) -> dict | None:
     with _conn() as c:
         row = c.execute(
             "SELECT * FROM results WHERE rule_id = ? ORDER BY id DESC LIMIT 1", (rule_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def last_result_by_type(rule_id: int, run_type: str) -> dict | None:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM results WHERE rule_id = ? AND run_type = ? ORDER BY id DESC LIMIT 1",
+            (rule_id, run_type),
         ).fetchone()
     return dict(row) if row else None
 
