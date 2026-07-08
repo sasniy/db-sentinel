@@ -55,9 +55,16 @@ def _now(p: dict) -> datetime:
     return datetime.utcnow() if p.get("use_utc") else datetime.now()
 
 
-def _time_literal(minutes_ago: int, p: dict) -> str:
-    ts = _now(p) - timedelta(minutes=minutes_ago)
-    return ts.strftime("%Y-%m-%d %H:%M:%S")
+def _time_expr(minutes_ago: int, p: dict, db_type: str) -> str:
+    """SQL-выражение «момент N минут назад» для условия окна.
+
+    В ClickHouse голая строка '2026-07-02 10:50:25' не приводится к колонке
+    типа Date (строгий парсинг) — оборачиваем в toDateTime(), Date и DateTime
+    при сравнении приводятся к общему типу автоматически."""
+    lit = (_now(p) - timedelta(minutes=minutes_ago)).strftime("%Y-%m-%d %H:%M:%S")
+    if db_type == "clickhouse":
+        return f"toDateTime('{lit}')"
+    return f"'{lit}'"
 
 
 def _parse_ts(value) -> datetime | None:
@@ -94,9 +101,9 @@ def _dispatch(rule: dict, db, db_type: str, lang: str) -> dict:
     if kind == "freshness":
         return _check_freshness(p, db, lang)
     if kind == "row_count":
-        return _check_row_count(p, db, lang)
+        return _check_row_count(p, db, db_type, lang)
     if kind == "null_check":
-        return _check_nulls(p, db, lang)
+        return _check_nulls(p, db, db_type, lang)
     if kind == "duplicates":
         return _check_duplicates(p, db, lang)
     if kind == "anomaly":
@@ -124,13 +131,13 @@ def _check_freshness(p: dict, db, lang: str) -> dict:
             "message": t(key, lang, age=age_min, max=int(max_age))}
 
 
-def _check_row_count(p: dict, db, lang: str) -> dict:
+def _check_row_count(p: dict, db, db_type: str, lang: str) -> dict:
     min_rows = float(p.get("min_rows", 1))
     window = int(p.get("window_minutes") or 0)
     sql = f"SELECT COUNT(*) FROM {_source(p)}"
     if window > 0:
         col = _ident(p["time_column"])
-        sql += f" WHERE {col} >= '{_time_literal(window, p)}'"
+        sql += f" WHERE {col} >= {_time_expr(window, p, db_type)}"
     count = float(db.fetch_value(sql) or 0)
     ok = count >= min_rows
     key = "msg.rowcount_ok" if ok else "msg.rowcount_alert"
@@ -138,14 +145,14 @@ def _check_row_count(p: dict, db, lang: str) -> dict:
             "message": t(key, lang, value=count, min=int(min_rows))}
 
 
-def _check_nulls(p: dict, db, lang: str) -> dict:
+def _check_nulls(p: dict, db, db_type: str, lang: str) -> dict:
     src, col = _source(p), _ident(p["column"])
     max_pct = float(p.get("max_null_percent", 0))
     window = int(p.get("window_minutes") or 0)
     where = ""
     if window > 0:
         tcol = _ident(p["time_column"])
-        where = f" WHERE {tcol} >= '{_time_literal(window, p)}'"
+        where = f" WHERE {tcol} >= {_time_expr(window, p, db_type)}"
     row = db.fetch_one(
         f"SELECT COUNT(*), SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) FROM {src}{where}"
     )
@@ -235,10 +242,10 @@ def _check_anomaly_history(p: dict, db, db_type: str, lang: str) -> dict:
     seasonality = bool(p.get("seasonality"))
 
     expr = _bucket_expr(db_type, col, granularity)
-    since = _time_literal(days * 1440, p)
+    since = _time_expr(days * 1440, p, db_type)
     rows = db.fetch_all(
         f"SELECT {expr} AS bucket, {metric} FROM {src} "
-        f"WHERE {col} >= '{since}' GROUP BY {expr} ORDER BY {expr}"
+        f"WHERE {col} >= {since} GROUP BY {expr} ORDER BY {expr}"
     )
     data = {str(r[0]): float(r[1] or 0) for r in rows}
     if not data:
